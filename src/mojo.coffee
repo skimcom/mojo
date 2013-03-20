@@ -180,7 +180,7 @@ class exports.Worker extends require('events').EventEmitter
         process.nextTick =>
           @poll()
 
-      @sleep()
+      @poll()
 
 
   # Sleep for a bit and then try to poll the queue again. If a timeout is
