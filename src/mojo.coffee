@@ -11,21 +11,19 @@
 
 # Mojo is backed by MongoDB
 mongodb = require 'mongodb'
-
+EventEmitter = require('events').EventEmitter
 
 # The **Connection** class wraps the connection to MongoDB. It includes
 # methods to manipulate (add, remove, clear, ...) jobs in the queues.
-class exports.Connection
+class exports.Connection extends EventEmitter
 
   # Initialize with a reference to the MongoDB and optional options
   # hash. Two opitions are currently supported: expires and timeout.
   constructor: (options) ->
     options or options = {}
     @ensureConnection options
-
     @expires = options.expires or 60 * 60 * 1000
     @timeout = options.timeout or 10 * 1000
-
 
   # Open a connection to the MongoDB server. Queries created while we are
   # connecting are queued and executed after the connection is established.
@@ -35,25 +33,25 @@ class exports.Connection
     # TODO: support replica sets
     server = new mongodb.Server opt.host || '127.0.0.1', opt.port || 27017
     new mongodb.Db(opt.db || 'queue', server, {}).open (err, db) =>
-      throw err if err
+      @emit('error', err) if err
 
       afterConnectionEstablished = (err) =>
-        throw err if err
+        @emit('error', err) if err
 
         # Make a lame read request to the database. This will return an error
         # if the client is not authorized to access it.
         db.collectionNames (err) =>
-          throw err if err
+          @emit('error', err) if err
 
           db.collection 'mojo', (err, collection) =>
-            throw err if err
+            @emit('error', err) if err
 
             @mojo = collection
             fn(collection) for fn in @queue if @queue
             delete @queue
 
             collection.ensureIndex [ ['expires'], ['owner'], ['queue'] ], (err) ->
-              throw err if err
+              @emit('error', err) if err
 
       if opt.username and opt.password
         db.authenticate opt.username, opt.password, afterConnectionEstablished
@@ -191,16 +189,15 @@ class exports.Worker extends require('events').EventEmitter
   getTemplate: (name) ->
     Template = null
     if name
-      @templates.some (_Template)->
+      @templates.some (_Template) =>
         if _Template.name == name
           Template = _Template
-          return true
+          true
     # Check the templates in round-robin order, one in each iteration.
     else if @rotate
       Template = @templates.shift()
       @templates.push Template
-
-    return Template
+    Template
 
   # Sleep for a bit and then try to poll the queue again. If a timeout is
   # already active make sure to clear it first.
